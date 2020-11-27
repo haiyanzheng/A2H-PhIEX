@@ -1,0 +1,128 @@
+model{
+
+# likelihood/sampling model for the animal studies
+# Mdoses: total number of doses tested in animal studies
+for(j in 1:NCohort){
+	linA[j] <- theta[Study[j], 1] + exp(theta[Study[j], 2])*log(delta[Species[j]]*DosesA[j]/DoseRef)
+	logit(pToxA[j]) <- linA[j]
+	NtoxA[j] ~ dbin(pToxA[j], NsubA[j])
+	}
+			
+	zero[1] <- 0
+	zero[2] <- 0
+			
+# theta=(theta1, theta2) derived from each animal study 	
+# but on the human equivalent scale	
+# likelihood/sampling model
+for(i in 1:Nstudy){
+	for(j in 1:Ndoses){
+		lin[i, j] <- theta[i, 1] + exp(theta[i, 2])*log(DosesH[j]/DoseRef)
+	}
+							
+	# theta[i, 1], theta[i, 2]
+	# parameters of the dose-toxicity model for each single animal study
+	# random effects re[, 1:2], between-study heterogeneity
+	# sp.ind[i]: index function to specify 
+	# which animal species the Study i belongs to
+	theta[i, 1] <- mu.ex.sp[sp.ind[i], 1] + re[i, 1]  
+	theta[i, 2] <- mu.ex.sp[sp.ind[i], 2] + re[i, 2]	
+	re[i, 1:2] ~ dmnorm(zero[1:2], prec.ex[1:2, 1:2])	
+	
+		  # PInd[]: matrice of the trivial/non-trivial weights
+		  # trivial weights for animals, no local robustification
+		  # to assure theta_i are fully exchangeable within same species
+		  sp.ind[i] ~ dcat(PInd[i, 1:(n.sp+1)])	
+}
+
+	# species cluster
+	for(k in 1:n.sp){
+		delta[k] <- exp(Prior.mn.delta[k] + Prior.sd.delta[k]*log.delta01[k])
+		log.delta01[k] ~ dnorm(0, 1)
+		mu.ex.sp[k, 1] <- m.ex[1] + re.m[k, 1]
+		mu.ex.sp[k, 2] <- m.ex[2] + re.m[k, 2]
+		re.m[k, 1:2] ~ dmnorm(zero[1:2], prec.sigma[1:2, 1:2])
+
+		theta.predH[k, 1] <- mu.ex.sp[k, 1] + re.h[k, 1]
+		theta.predH[k, 2] <- mu.ex.sp[k, 2] + re.h[k, 2]
+		re.h[k, 1:2] ~ dmnorm(zero[1:2], prec.ex[1:2, 1:2])
+		}
+
+		# default weakly-informative prior for robustification
+		theta.predH[(n.sp+1), 1:2] ~ dmnorm(Prior.mw[1:2], prec.sw[1:2, 1:2])
+			    cov.rb[1, 1] <- pow(Prior.sw[1], 2)
+	 		    cov.rb[2, 2] <- pow(Prior.sw[2], 2)
+	 		    cov.rb[1, 2] <- Prior.sw[1]*Prior.sw[2]*Prior.corr
+			    cov.rb[2, 1] <- cov.rb[1, 2]
+	 		    prec.sw[1:2, 1:2] <- inverse(cov.rb[1:2, 1:2])
+
+
+					
+# MA prediction
+theta.star[1] <- theta.predH[which, 1] 
+theta.star[2] <- theta.predH[which, 2] 
+
+
+# wMix[]: non-trivial weights for humans to borrow strength from animals
+which ~ dcat(wMix[1:(n.sp+1)])
+
+# to monitor the exchangeability probability 
+# during the course of the phase I human trial
+	for(k in 1:(n.sp+1)){
+		prob.ex[k] <- equals(which, k)
+	}
+
+
+# human data
+for(j in 1:Ndoses){
+		linH[j] <- theta.star[1] + exp(theta.star[2])*log(DosesH[j]/DoseRef)
+		logit(pToxH[j]) <- linH[j]
+		NtoxH[j] ~ dbin(pToxH[j], NsubH[j])
+		
+		pCat[j, 1] <- step(pTox.cut[1] - pToxH[j])
+		pCat[j, 2] <- step(pTox.cut[2] - pToxH[j]) 
+					- step(pTox.cut[1] - pToxH[j])
+		pCat[j, 3] <- step(1 - pToxH[j]) 
+					- step(pTox.cut[2] - pToxH[j])
+		
+}
+			
+# priors: Prior.mt1, Prior.mt2
+	prec.mt1 <- pow(Prior.mt1[2], -2)
+	prec.mt2 <- pow(Prior.mt2[2], -2)
+
+	# numerical stability:
+	# constrained to -10 and +10 (mt1), -5 and 5 (mt2)			
+	m.ex[1] ~ dnorm(Prior.mt1[1], prec.mt1)I(-10, 10)
+	m.ex[2] ~ dnorm(Prior.mt2[1], prec.mt2)I(-5, 5)
+
+			
+# Priors for hyper parameters of the covariance matrix prec.ex[1:2, 1:2]
+	prec.tau1 <- pow(Prior.tau.HN[1], -2)
+	prec.tau2 <- pow(Prior.tau.HN[2], -2)
+	tau[1] ~ dnorm(0, prec.tau1)I(0.001,)
+	tau[2] ~ dnorm(0, prec.tau2)I(0.001,)
+	cov.ex[1, 1] <- pow(tau[1], 2)
+	cov.ex[2, 2] <- pow(tau[2], 2)
+	cov.ex[1, 2] <- tau[1]*tau[2]*rho
+	cov.ex[2, 1] <- cov.ex[1, 2]
+	prec.ex[1:2, 1:2] <- inverse(cov.ex[1:2, 1:2])
+			
+	rho ~ dunif(Prior.rho[1], Prior.rho[2])
+			
+# Priors for hyper parameters of the covariance matrix prec.sigma[1:2, 1:2]
+	prec.sigma1 <- pow(Prior.sigma.HN[1], -2)
+	prec.sigma2 <- pow(Prior.sigma.HN[2], -2)
+	sigma[1] ~ dnorm(0, prec.sigma1)I(0.001,)
+	sigma[2] ~ dnorm(0, prec.sigma2)I(0.001,)
+	cov.sig[1, 1] <- pow(sigma[1], 2)
+	cov.sig[2, 2] <- pow(sigma[2], 2)
+	cov.sig[1, 2] <- sigma[1]*sigma[2]*kappa
+	cov.sig[2, 1] <- cov.sig[1, 2]
+	prec.sigma[1:2, 1:2] <- inverse(cov.sig[1:2, 1:2])
+			
+	kappa ~ dunif(Prior.kappa[1], Prior.kappa[2])
+
+
+
+}
+
