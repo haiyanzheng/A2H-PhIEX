@@ -1,4 +1,4 @@
-# A2PhI
+# A2H-PhIEX
 OpenBUGS code and R functions to implement the Bayesian hierarchical random-effects model for leveraging animal data from one or multiple species in phase I oncology trials. 
 
 Files contained in this repository can be used to reproduce the numerical results reported in the paper entitled
